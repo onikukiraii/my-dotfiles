@@ -1,4 +1,4 @@
-zmodload zsh/zprof
+# zmodload zsh/zprof  # プロファイリング時のみ有効化
 
 # PATH
 export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/Users/masato.takayama/.antigravity/antigravity/bin:$PATH"
@@ -12,7 +12,14 @@ eval "$(direnv hook zsh)"
 # Docker CLI completions
 fpath=(/Users/masato.takayama/.docker/completions $fpath)
 autoload -Uz compinit
-compinit
+# 1日1回だけ補完キャッシュを再生成（高速化）
+setopt extendedglob
+if [[ -n ~/.zcompdump(#qN.mh+24) ]]; then
+  compinit
+else
+  compinit -C
+fi
+unsetopt extendedglob
 
 # carapace (multi-shell completion)
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense'
