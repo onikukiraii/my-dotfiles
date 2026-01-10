@@ -1,0 +1,22 @@
+theme = "darcula-solid"
+
+[editor]
+# line-number = "relative"
+mouse = true
+
+[editor.cursor-shape]
+insert = "bar"
+normal = "block"
+select = "underline"
+
+[editor.file-picker]
+hidden = false
+
+[keys.normal]
+C-y = [
+  ':sh rm -f /tmp/yazi-chosen',
+  ':insert-output yazi "%{buffer_name}" --chooser-file=/tmp/yazi-chosen',
+  ':sh printf "\\x1b[?1049h\\x1b[?2004h" > /dev/tty',
+  ':open %sh{cat /tmp/yazi-chosen}',
+  ':redraw',
+]
