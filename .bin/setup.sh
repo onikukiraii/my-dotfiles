@@ -316,6 +316,58 @@ install_zsh_plugins() {
 }
 
 # =============================================================================
+# Claude Code 設定
+# =============================================================================
+link_claude_config() {
+  local os="$1"
+  local claude_dir="$HOME/.claude"
+  local dotfiles_claude="$DOTDIR/.claude"
+
+  if [[ ! -d "$dotfiles_claude" ]]; then
+    warn "Claude config not found in dotfiles, skipping..."
+    return
+  fi
+
+  info "Setting up Claude Code configuration..."
+
+  # ~/.claude ディレクトリ作成
+  mkdir -p "$claude_dir"
+  mkdir -p "$claude_dir/skills"
+
+  # CLAUDE.md をリンク
+  if [[ -f "$dotfiles_claude/CLAUDE.md" ]]; then
+    ln -snf "$dotfiles_claude/CLAUDE.md" "$claude_dir/CLAUDE.md"
+    success "Linked CLAUDE.md"
+  fi
+
+  # skills をリンク
+  if [[ -d "$dotfiles_claude/skills" ]]; then
+    for skill in "$dotfiles_claude/skills"/*; do
+      if [[ -d "$skill" ]]; then
+        local skill_name
+        skill_name=$(basename "$skill")
+        ln -snf "$skill" "$claude_dir/skills/$skill_name"
+        success "Linked skill: $skill_name"
+      fi
+    done
+  fi
+
+  # settings.json を OS に応じてリンク
+  local settings_file
+  case "$os" in
+    macos) settings_file="$dotfiles_claude/settings.macos.json" ;;
+    linux) settings_file="$dotfiles_claude/settings.linux.json" ;;
+  esac
+
+  if [[ -f "$settings_file" ]]; then
+    ln -snf "$settings_file" "$claude_dir/settings.json"
+    success "Linked settings.json (${os})"
+  else
+    warn "Settings file not found: $settings_file"
+  fi
+}
+
+# =============================================================================
 # メイン処理
 # =============================================================================
 main() {
@@ -343,6 +395,10 @@ main() {
   echo ""
   info "Running dotfiles linker..."
   bash "$SCRIPT_DIR/install.sh"
+
+  echo ""
+  info "Setting up Claude Code..."
+  link_claude_config "$os"
 
   echo ""
   success "Setup completed!"
