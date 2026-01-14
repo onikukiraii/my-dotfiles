@@ -49,6 +49,10 @@ alias gp='git push'
 alias gl='git pull'
 alias glog='git log --oneline --graph'
 
+# lazy tools
+alias lg='lazygit'
+alias ld='lazydocker'
+
 # git worktree helpers
 gwt() {
   if [ -z "$1" ]; then
@@ -76,8 +80,7 @@ gwt() {
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     # ブランチが存在する場合は通常のworktree追加
     if git worktree add "$worktree_dir" "$branch"; then
-      cd "$worktree_dir"
-      echo "Created and moved to: $worktree_dir"
+      _gwt_post_setup "$repo_root" "$worktree_dir"
     else
       echo "Failed to create worktree"
       return 1
@@ -85,13 +88,37 @@ gwt() {
   else
     # ブランチが存在しない場合は新規ブランチを作成
     if git worktree add -b "$branch" "$worktree_dir"; then
-      cd "$worktree_dir"
-      echo "Created new branch '$branch' and moved to: $worktree_dir"
+      _gwt_post_setup "$repo_root" "$worktree_dir"
     else
       echo "Failed to create worktree with new branch"
       return 1
     fi
   fi
+}
+
+# worktree作成後の共通セットアップ
+_gwt_post_setup() {
+  local main_repo="$1"
+  local worktree_dir="$2"
+
+  cd "$worktree_dir"
+
+  # .env系ファイルをシンボリックリンク
+  for envfile in "$main_repo"/.env*; do
+    if [[ -f "$envfile" ]]; then
+      local filename=$(basename "$envfile")
+      ln -sf "$envfile" "$worktree_dir/$filename"
+      echo "Linked: $filename"
+    fi
+  done
+
+  # direnv allowを自動実行
+  if [[ -f "$worktree_dir/.envrc" ]]; then
+    direnv allow
+    echo "direnv: allowed"
+  fi
+
+  echo "Created and moved to: $worktree_dir"
 }
 
 gwtl() {
@@ -111,3 +138,13 @@ gwtr() {
   git worktree remove "$current"
   echo "Removed: $current"
 }
+
+# .venvがあるディレクトリに入ったら自動アクティベート
+auto_activate_venv() {
+  if [[ -d .venv ]] && [[ -f .venv/bin/activate ]]; then
+    source .venv/bin/activate 2>/dev/null
+  fi
+}
+autoload -U add-zsh-hook
+add-zsh-hook chpwd auto_activate_venv
+auto_activate_venv  # シェル起動時も実行
