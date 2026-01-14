@@ -78,6 +78,7 @@ install_macos_packages() {
 
     # Editor
     helix
+
   )
 
   local casks=(
@@ -101,6 +102,15 @@ install_macos_packages() {
       brew install --cask "$cask" || warn "Failed to install $cask"
     fi
   done
+
+  # Tap packages
+  if ! brew list cesarferreira/tap/rip &>/dev/null; then
+    info "Installing rip (process killer)..."
+    brew tap cesarferreira/tap
+    brew install rip
+  else
+    success "rip already installed"
+  fi
 
   success "macOS packages installation completed"
 }
