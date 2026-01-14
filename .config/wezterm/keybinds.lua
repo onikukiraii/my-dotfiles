@@ -63,6 +63,8 @@ return {
     { key = "t", mods = "SUPER", action = act({ SpawnTab = "CurrentPaneDomain" }) },
     -- ペイン/タブを閉じる (iTerm風: Cmd + W でペインを閉じる、最後のペインならタブも閉じる)
     { key = "w", mods = "SUPER", action = act({ CloseCurrentPane = { confirm = true } }) },
+    -- タブを丸ごと閉じる（ペイン全部含む）
+    { key = "w", mods = "SUPER|SHIFT", action = act.CloseCurrentTab({ confirm = false }) },
 
     -- 画面フルスクリーン切り替え
     { key = "Enter", mods = "ALT", action = act.ToggleFullScreen },
@@ -196,6 +198,9 @@ return {
         right:send_text("claude\n")
       end),
     },
+
+    -- 壁紙をランダム変更 (Leader + b)
+    { key = "b", mods = "LEADER", action = act.EmitEvent("change-wallpaper") },
 
     -- キーテーブル用
     { key = "s", mods = "LEADER", action = act.ActivateKeyTable({ name = "resize_pane", one_shot = false }) },

@@ -2,6 +2,47 @@ local wezterm = require("wezterm")
 local config = wezterm.config_builder()
 local background = require("background")
 
+-- 壁紙リスト
+local backgrounds_dir = wezterm.config_dir .. "/backgrounds"
+local wallpaper_images = {
+  backgrounds_dir .. "/shinobu.png",
+  backgrounds_dir .. "/azusa.png",
+}
+local current_wallpaper_index = 1
+
+-- 壁紙をランダム変更するイベント
+wezterm.on("change-wallpaper", function(window, pane)
+  -- 次の壁紙を選択（現在と異なるものを選ぶ）
+  if #wallpaper_images > 1 then
+    local new_index = current_wallpaper_index
+    while new_index == current_wallpaper_index do
+      new_index = math.random(#wallpaper_images)
+    end
+    current_wallpaper_index = new_index
+  end
+
+  local new_image = wallpaper_images[current_wallpaper_index]
+
+  window:set_config_overrides({
+    background = {
+      { source = { Color = "#030000" }, opacity = 1.0, width = "100%", height = "100%" },
+      {
+        source = { File = new_image },
+        repeat_x = "NoRepeat",
+        repeat_y = "NoRepeat",
+        height = "Contain",
+        width = "Contain",
+        horizontal_align = "Right",
+        vertical_align = "Bottom",
+        opacity = 0.7,
+        hsb = { brightness = 0.5, saturation = 1.0 },
+      },
+      { source = { Color = "#000000" }, width = "100%", height = "100%", opacity = 0.5 },
+    },
+  })
+  wezterm.log_info("Wallpaper changed to: " .. new_image)
+end)
+
 -- セッション保存・復元プラグイン
 local resurrect = wezterm.plugin.require("https://github.com/MLFlexer/resurrect.wezterm")
 resurrect.state_manager.periodic_save()
