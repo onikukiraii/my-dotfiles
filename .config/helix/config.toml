@@ -1,4 +1,4 @@
-theme = "darcula-solid"
+theme = "darcula-transparent"
 
 [editor]
 # line-number = "relative"
