@@ -2,13 +2,88 @@ local wezterm = require("wezterm")
 local act = wezterm.action
 local resurrect = wezterm.plugin.require("https://github.com/MLFlexer/resurrect.wezterm")
 
+-- ペインサイズをパーセンテージで設定するヘルパー関数
+local function resize_pane_to_percent(target_percent)
+  return wezterm.action_callback(function(win, pane)
+    local tab = pane:tab()
+    local panes = tab:panes_with_info()
+    for _, p in ipairs(panes) do
+      if p.pane:pane_id() == pane:pane_id() then
+        local current_percent = p.width / tab:get_size().cols
+        local delta = math.floor((target_percent - current_percent) * tab:get_size().cols)
+        if delta > 0 then
+          win:perform_action(act.AdjustPaneSize({ "Right", delta }), pane)
+        elseif delta < 0 then
+          win:perform_action(act.AdjustPaneSize({ "Left", -delta }), pane)
+        end
+        break
+      end
+    end
+  end)
+end
+
+-- ペインサイズを相対的にパーセンテージで調整するヘルパー関数
+-- direction: "Left", "Right", "Up", "Down"
+-- percent: 調整する割合（0.1 = 10%）
+local function adjust_pane_by_percent(direction, percent)
+  return wezterm.action_callback(function(win, pane)
+    local tab = pane:tab()
+    local tab_size = tab:get_size()
+    local delta
+    if direction == "Left" or direction == "Right" then
+      delta = math.floor(percent * tab_size.cols)
+    else
+      delta = math.floor(percent * tab_size.rows)
+    end
+    if delta > 0 then
+      win:perform_action(act.AdjustPaneSize({ direction, delta }), pane)
+    end
+  end)
+end
+
+-- モードごとの色設定
+local mode_colors = {
+  copy_mode = { bg = "#e5c07b", fg = "#282c34", label = " COPY " },
+  search_mode = { bg = "#61afef", fg = "#282c34", label = " SEARCH " },
+  resize_pane = { bg = "#c678dd", fg = "#282c34", label = " RESIZE " },
+  activate_pane = { bg = "#98c379", fg = "#282c34", label = " PANE " },
+  resize_pane_percent = { bg = "#e06c75", fg = "#282c34", label = " SIZE% " },
+}
+
 -- Show which key table is active in the status area
 wezterm.on("update-right-status", function(window, pane)
   local name = window:active_key_table()
+  local elements = {}
+
   if name then
-    name = "TABLE: " .. name
+    local mode = mode_colors[name] or { bg = "#5c6d74", fg = "#ffffff", label = " " .. name:upper() .. " " }
+
+    -- モード表示（色付き）
+    table.insert(elements, { Background = { Color = mode.bg } })
+    table.insert(elements, { Foreground = { Color = mode.fg } })
+    table.insert(elements, { Attribute = { Intensity = "Bold" } })
+    table.insert(elements, { Text = mode.label })
+    table.insert(elements, "ResetAttributes")
+
+    -- 既存のオーバーライドを保持しつつカーソル色を追加
+    local overrides = window:get_config_overrides() or {}
+    overrides.colors = overrides.colors or {}
+    overrides.colors.cursor_bg = mode.bg
+    overrides.colors.cursor_fg = mode.fg
+    overrides.colors.cursor_border = mode.bg
+    window:set_config_overrides(overrides)
+  else
+    -- 通常時はカーソル色のみクリア（背景などは保持）
+    local overrides = window:get_config_overrides() or {}
+    if overrides.colors then
+      overrides.colors.cursor_bg = nil
+      overrides.colors.cursor_fg = nil
+      overrides.colors.cursor_border = nil
+    end
+    window:set_config_overrides(overrides)
   end
-  window:set_right_status(name or "")
+
+  window:set_right_status(wezterm.format(elements))
 end)
 
 return {
@@ -74,6 +149,37 @@ return {
 
     -- コピーモード
     { key = "[", mods = "LEADER", action = act.ActivateCopyMode },
+    -- 直前のコマンドと出力をコピー (Leader + y)
+    {
+      key = "y",
+      mods = "LEADER",
+      action = wezterm.action_callback(function(window, pane)
+        -- コピーモードに入る
+        window:perform_action(act.ActivateCopyMode, pane)
+
+        -- 直前のInputゾーン（最後のコマンド）に移動
+        window:perform_action(act.CopyMode({ MoveBackwardZoneOfType = "Input" }), pane)
+
+        -- セル選択モードを開始
+        window:perform_action(act.CopyMode({ SetSelectionMode = "Cell" }), pane)
+
+        -- 次のPromptゾーンまで選択（コマンドと出力を含む）
+        window:perform_action(act.CopyMode({ MoveForwardZoneOfType = "Prompt" }), pane)
+
+        -- 1行上に移動して行末へ（現在のプロンプト行を除外）
+        window:perform_action(act.CopyMode("MoveUp"), pane)
+        window:perform_action(act.CopyMode("MoveToEndOfLineContent"), pane)
+
+        -- クリップボードにコピー
+        window:perform_action(
+          act.Multiple({
+            { CopyTo = "ClipboardAndPrimarySelection" },
+            { Multiple = { "ScrollToBottom", { CopyMode = "Close" } } },
+          }),
+          pane
+        )
+      end),
+    },
     -- コピー
     { key = "c", mods = "SUPER", action = act.CopyTo("Clipboard") },
     -- 貼り付け
@@ -184,23 +290,22 @@ return {
         -- 左側を左右に分割（左20%, 真ん中60%）
         local middle = pane:split({ direction = "Right", size = 0.75, cwd = cwd })
 
-        -- 左側を上下に分割（上=lazygit, 下=terminal）
-        local left_bottom = pane:split({ direction = "Bottom", size = 0.5, cwd = cwd })
-
-        -- 真ん中を上下に分割（上=hx, 下=claude）
-        local middle_bottom = middle:split({ direction = "Bottom", size = 0.5, cwd = cwd })
+        -- 真ん中を上下に分割（上=hx, 下=terminal 3行程度）
+        local terminal = middle:split({ direction = "Bottom", size = 0.1, cwd = cwd })
 
         -- 各パネルでコマンド実行
-        pane:send_text("lazygit\n")
-        -- left_bottom はterminal（空のまま）
-        middle:send_text("hx .\n")
-        middle_bottom:send_text("claude\n")
-        right:send_text("claude\n")
+        pane:send_text("claude\n")       -- 左
+        middle:send_text("hx .\n")       -- 真ん中上
+        -- terminal は空のまま           -- 真ん中下
+        right:send_text("claude\n")      -- 右 (vault)
       end),
     },
 
     -- 壁紙をランダム変更 (Leader + b)
     { key = "b", mods = "LEADER", action = act.EmitEvent("change-wallpaper") },
+
+    -- ペインサイズをパーセンテージで設定 (Leader + % でプリセット選択モード)
+    { key = "%", mods = "LEADER", action = act.ActivateKeyTable({ name = "resize_pane_percent", one_shot = true }) },
 
     -- キーテーブル用
     { key = "s", mods = "LEADER", action = act.ActivateKeyTable({ name = "resize_pane", one_shot = false }) },
@@ -214,20 +319,37 @@ return {
   -- https://wezfurlong.org/wezterm/config/key-tables.html
   key_tables = {
     -- Paneサイズ調整 leader + s (ijkl: i=上, k=下, j=左, l=右)
+    -- Paneサイズ調整 leader + s (ijkl: i=上, k=下, j=左, l=右) - 10%ずつ調整
     resize_pane = {
-      { key = "j", action = act.AdjustPaneSize({ "Left", 1 }) },
-      { key = "l", action = act.AdjustPaneSize({ "Right", 1 }) },
-      { key = "i", action = act.AdjustPaneSize({ "Up", 1 }) },
-      { key = "k", action = act.AdjustPaneSize({ "Down", 1 }) },
+      { key = "j", action = adjust_pane_by_percent("Left", 0.1) },
+      { key = "l", action = adjust_pane_by_percent("Right", 0.1) },
+      { key = "i", action = adjust_pane_by_percent("Up", 0.1) },
+      { key = "k", action = adjust_pane_by_percent("Down", 0.1) },
 
       -- Cancel the mode by pressing escape
       { key = "Enter", action = "PopKeyTable" },
+      { key = "Escape", action = "PopKeyTable" },
     },
     activate_pane = {
       { key = "j", action = act.ActivatePaneDirection("Left") },
       { key = "l", action = act.ActivatePaneDirection("Right") },
       { key = "i", action = act.ActivatePaneDirection("Up") },
       { key = "k", action = act.ActivatePaneDirection("Down") },
+    },
+    -- ペインサイズをパーセンテージで設定 (Leader + %)
+    -- 数字キー1-9で10%-90%
+    resize_pane_percent = {
+      { key = "1", action = resize_pane_to_percent(0.1) },
+      { key = "2", action = resize_pane_to_percent(0.2) },
+      { key = "3", action = resize_pane_to_percent(0.3) },
+      { key = "4", action = resize_pane_to_percent(0.4) },
+      { key = "5", action = resize_pane_to_percent(0.5) },
+      { key = "6", action = resize_pane_to_percent(0.6) },
+      { key = "7", action = resize_pane_to_percent(0.7) },
+      { key = "8", action = resize_pane_to_percent(0.8) },
+      { key = "9", action = resize_pane_to_percent(0.9) },
+      -- キャンセル
+      { key = "Escape", action = "PopKeyTable" },
     },
     -- copyモード leader + [ (ijkl: i=上, k=下, j=左, l=右)
     copy_mode = {
